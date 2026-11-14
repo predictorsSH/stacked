@@ -1,3 +1,4 @@
 ARTICLES_PER_DAY = 3
 MATURITY_DAYS = 5
 RAW_DATA_PATH = "data/raw/hn/"
+TIMEZONE = "Asia/Seoul"
