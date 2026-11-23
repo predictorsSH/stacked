@@ -3,10 +3,18 @@ from datetime import date
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from stacked.core.config import HN_API, HN_HIT_PER_PAGE
 from stacked.pipeline.source import hackernews
-from stacked.pipeline.source.hackernews import HNFetchError, fetch_hackernews, make_parameter
+from stacked.pipeline.source.hackernews import (
+    HNArticle,
+    HNFetchError,
+    HNParseError,
+    fetch_hackernews,
+    make_parameter,
+    parse_hackernews,
+)
 
 
 def test_make_parameters():
@@ -85,3 +93,118 @@ def test_fetch_hackernews_not_json(monkeypatch):
         fetch_hackernews(parameter={})
 
     assert isinstance(e.value.__cause__, json.JSONDecodeError)
+
+
+def test_parse_hackernews_return_hn_article():
+
+    response = {
+        "hits": [
+            {
+                "objectID": "1",
+                "title": "some title",
+                "url": "https://example.com",
+                "created_at": "2099-99-99",
+                "points": 100,
+                "num_comments": 10,
+                "children": [1, 2, 3],
+            }
+        ]
+    }
+
+    expected = HNArticle(
+        object_id="1",
+        title="some title",
+        url="https://example.com",
+        created_at="2099-99-99",
+        points=100,
+        num_comments=10,
+    )
+
+    assert parse_hackernews(response) == [expected]
+
+
+def test_parse_hackernews_has_no_url():
+
+    response = {
+        "hits": [
+            {
+                "objectID": "1",
+                "title": "some title",
+                "created_at": "2099-99-99",
+                "points": 100,
+                "num_comments": 10,
+                "children": [1, 2, 3],
+            }
+        ]
+    }
+
+    expected = HNArticle(
+        object_id="1",
+        title="some title",
+        url=None,
+        created_at="2099-99-99",
+        points=100,
+        num_comments=10,
+    )
+
+    assert parse_hackernews(response) == [expected]
+
+
+def test_parse_hackernews_has_empty_hits():
+
+    response = {"hits": []}
+
+    expected = []
+
+    assert parse_hackernews(response) == expected
+
+
+def test_parse_hackernews_has_no_hits():
+
+    response = {"nohits": []}
+
+    with pytest.raises(HNParseError) as e:
+        parse_hackernews(response)
+
+    assert isinstance(e.value.__cause__, KeyError)
+
+
+def test_parse_hackernews_with_validation_error():
+
+    response = {
+        "hits": [
+            {
+                "objectID": "1",
+                "title": "some title",
+                "created_at": "2099-99-99",
+                "points": None,
+                "num_comments": 10,
+                "children": [1, 2, 3],
+            }
+        ]
+    }
+
+    with pytest.raises(HNParseError) as e:
+        parse_hackernews(response)
+
+    assert isinstance(e.value.__cause__, ValidationError)
+
+
+def test_parse_hackernews_with_key_error():
+
+    response = {
+        "hits": [
+            {
+                "objectID": "1",
+                "title": "some title",
+                "created_at": "2099-99-99",
+                "num_comments": 10,
+                "children": [1, 2, 3],
+            }
+        ]
+    }
+
+    with pytest.raises(HNParseError) as e:
+        parse_hackernews(response)
+
+    assert isinstance(e.value.__cause__, KeyError)
