@@ -2,7 +2,7 @@ import json
 from datetime import date
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from stacked.core.config import HN_API, HN_HIT_PER_PAGE, HN_NUM_COMMENTS, HN_POINTS, HN_TIMEOUT
 from stacked.core.dates import day_bounds
@@ -10,6 +10,10 @@ from stacked.core.dates import day_bounds
 
 class HNFetchError(Exception):
     """HN(Algolia) 수집이 실패했을 때 나는 예외."""
+
+
+class HNParseError(Exception):
+    """HN(Algolia) 파싱에 실패했을 때 나는 예외."""
 
 
 class HNArticle(BaseModel):
@@ -47,18 +51,26 @@ def fetch_hackernews(parameter: dict, *, timeout: float = HN_TIMEOUT) -> dict:
 
 def parse_hackernews(response: dict) -> list[HNArticle]:
     parsed = []
-    hits = response["hits"]
+
+    try:
+        hits = response["hits"]
+    except KeyError as e:
+        raise HNParseError(f"hits 목록이 존재하지 않습니다. {e}") from e
+
     for article in hits:
-        parsed.append(
-            HNArticle(
-                object_id=article["objectID"],
-                title=article["title"],
-                url=article.get("url"),
-                created_at=article["created_at"],
-                points=article["points"],
-                num_comments=article["num_comments"],
+        try:
+            parsed.append(
+                HNArticle(
+                    object_id=article["objectID"],
+                    title=article["title"],
+                    url=article.get("url"),
+                    created_at=article["created_at"],
+                    points=article["points"],
+                    num_comments=article["num_comments"],
+                )
             )
-        )
+        except (KeyError, ValidationError) as e:
+            raise HNParseError(f"아티클 파싱 실패. {e}") from e
     return parsed
 
 
@@ -66,13 +78,3 @@ def collect_hackernews(target: date) -> list[HNArticle]:
     parameter = make_parameter(target)
     response = fetch_hackernews(parameter=parameter)
     return parse_hackernews(response)
-
-
-if __name__ == "__main__":
-    parameter = make_parameter(date(2026, 11, 17))
-    response = fetch_hackernews(parameter=parameter)
-
-    parsed = parse_hackernews(response)
-    for p in parsed:
-        print("-------------")
-        print(p)
